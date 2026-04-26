@@ -1,0 +1,114 @@
+{
+  "project_info": {
+    "project_number": "152641542029",
+    "firebase_url": "https://zapoo-d23ea-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "zapoo-d23ea",
+    "storage_bucket": "zapoo-d23ea.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:152641542029:android:98a52633a0324a9495cfc4",
+        "android_client_info": {
+          "package_name": "com.zappo.delivery"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "152641542029-sph46j506udt9qrisfa5se1h86b4a81m.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAUbX8nSfDUoCjluXGmb-9XUGuzu804xfM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "152641542029-sph46j506udt9qrisfa5se1h86b4a81m.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:152641542029:android:3daf251cc91fe8ad95cfc4",
+        "android_client_info": {
+          "package_name": "com.zappo.restaurant"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "152641542029-a72i72jpb26c8pnp7c36m9dfk6eu8eqf.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.zappo.restaurant",
+            "certificate_hash": "e10321372a2fe2041b96c5a99d35433100b6828d"
+          }
+        },
+        {
+          "client_id": "152641542029-sph46j506udt9qrisfa5se1h86b4a81m.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAUbX8nSfDUoCjluXGmb-9XUGuzu804xfM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "152641542029-sph46j506udt9qrisfa5se1h86b4a81m.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:152641542029:android:f4b3483e8b108a8095cfc4",
+        "android_client_info": {
+          "package_name": "com.zappo.user"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "152641542029-ih6m3f740dbntndi6gnr3lu65vpg9otn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.zappo.user",
+            "certificate_hash": "f979f773294ecbad46173f737ed965231a5b454e"
+          }
+        },
+        {
+          "client_id": "152641542029-sph46j506udt9qrisfa5se1h86b4a81m.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAUbX8nSfDUoCjluXGmb-9XUGuzu804xfM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "152641542029-sph46j506udt9qrisfa5se1h86b4a81m.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
