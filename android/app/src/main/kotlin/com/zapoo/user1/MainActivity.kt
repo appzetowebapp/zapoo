@@ -1,4 +1,4 @@
-package com.zappo.user
+package com.zapoo.user1
 
 import android.Manifest
 import android.content.pm.PackageManager

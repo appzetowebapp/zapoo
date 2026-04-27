@@ -1504,8 +1504,12 @@ class _WebViewScreenState extends State<WebViewScreen> {
                               debugPrint('🟢 Triggering Native Google Sign In');
 
                               // 1. Show the Native Android Account List
+                              // Explicitly providing serverClientId helps resolve ApiException 10 (Developer Error)
                               final GoogleSignInAccount? googleUser =
-                                  await GoogleSignIn().signIn();
+                                  await GoogleSignIn(
+                                serverClientId:
+                                    '152641542029-sph46j506udt9qrisfa5se1h86b4a81m.apps.googleusercontent.com',
+                              ).signIn();
                               if (googleUser == null) {
                                 debugPrint(
                                     '⚠️ Google Sign-In Cancelled by User');
@@ -1576,11 +1580,22 @@ class _WebViewScreenState extends State<WebViewScreen> {
                               return response;
                             } catch (error) {
                               debugPrint('❌ Google Sign-In Error: $error');
+
+                              // Provide more specific guidance for ApiException 10 (Developer Error)
+                              String errorMessage = error.toString();
+                              if (errorMessage.contains('ApiException: 10')) {
+                                errorMessage +=
+                                    '\n\n💡 FIX: This usually means the SHA-1 fingerprint is missing in Firebase Console or there is a package name mismatch.\n'
+                                    '1. Go to Firebase Console > Project Settings > General\n'
+                                    '2. Add the SHA-1 of your current debug/release keystore.\n'
+                                    '3. Current machine Debug SHA-1: C7:87:21:1B:2A:10:A8:01:65:95:F9:B4:6A:AE:F1:34:E0:A9:F6:11';
+                              }
+
                               return {
                                 'success': false,
                                 'cancelled': false,
                                 'error': 'SIGN_IN_FAILED',
-                                'message': error.toString()
+                                'message': errorMessage
                               };
                             }
                           },
@@ -1593,7 +1608,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
                             try {
                               debugPrint(
                                   '🟢 Triggering Native Google Sign Out');
-                              await GoogleSignIn().signOut();
+                              await GoogleSignIn(
+                                serverClientId:
+                                    '152641542029-sph46j506udt9qrisfa5se1h86b4a81m.apps.googleusercontent.com',
+                              ).signOut();
                               await FirebaseAuth.instance.signOut();
                               return {'success': true};
                             } catch (error) {
