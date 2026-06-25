@@ -22,10 +22,13 @@ import 'package:webview_master_app/utils/status_bar_util.dart';
 import 'package:webview_master_app/widgets/exit_dialog.dart';
 import 'package:webview_master_app/widgets/offline_screen.dart';
 import 'package:webview_master_app/web_share_bridge.dart';
+import 'package:webview_master_app/utils/deep_link_handler.dart';
+import 'package:webview_master_app/utils/location_settings_util.dart';
 
 /// WebView Screen - Main screen that loads the configured web URL
 class WebViewScreen extends StatefulWidget {
-  const WebViewScreen({super.key});
+  final String? initialUrl;
+  const WebViewScreen({super.key, this.initialUrl});
 
   @override
   State<WebViewScreen> createState() => _WebViewScreenState();
@@ -70,6 +73,18 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _checkConnectivity();
     _initializeNotifications();
     _listenToConnectivityChanges();
+    _setupDeepLinking();
+  }
+
+  void _setupDeepLinking() {
+    DeepLinkHandler().onLinkReceived = (uri) {
+      if (_webViewController != null && mounted) {
+        debugPrint('🚀 Deep link navigation to: $uri');
+        _webViewController!.loadUrl(
+          urlRequest: URLRequest(url: WebUri(uri.toString())),
+        );
+      }
+    };
   }
 
   @override
@@ -137,6 +152,38 @@ class _WebViewScreenState extends State<WebViewScreen> {
     return shouldExit;
   }
 
+  /// Checks whether location services are on and the runtime permission is
+  /// granted. Shows the Google Location Enable Dialog for the service check and
+  /// the system permission prompt if needed. Returns true when location is
+  /// fully available, false if the user declined any step.
+  Future<bool> _checkAndEnableLocation() async {
+    // --- Location service (GPS toggle) ---
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      debugPrint('📍 Location service off – showing Google dialog');
+      final enabled = await LocationSettingsUtil.showLocationEnableDialog();
+      if (!enabled) {
+        debugPrint('📍 User declined to enable location');
+        return false;
+      }
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return false;
+    }
+
+    // --- Runtime permission ---
+    var status = await Permission.location.status;
+    if (status.isPermanentlyDenied) {
+      await openAppSettings();
+      return false;
+    }
+    if (status.isDenied) {
+      status = await Permission.location.request();
+      if (!status.isGranted) return false;
+    }
+
+    return true;
+  }
+
   /// Start voice recognition and send result back to WebView
   void _startVoiceSearch() async {
     debugPrint('🎙️ Starting voice search...');
@@ -192,6 +239,54 @@ class _WebViewScreenState extends State<WebViewScreen> {
       _webViewController?.evaluateJavascript(
           source:
               'if(window.onFlutterVoiceError) window.onFlutterVoiceError("Internal error: $e")');
+    }
+  }
+
+  /// Wraps navigator.geolocation.getCurrentPosition so that every call –
+  /// whether from the web app's own code or from our button bridge – first
+  /// checks with Flutter that the GPS service is on and the permission is
+  /// granted before the browser actually tries to get a position.
+  Future<void> _injectLocationInterceptorScript(
+      InAppWebViewController controller) async {
+    try {
+      const script = r"""
+        (function() {
+          if (window.__locationInterceptorInstalled) return;
+          window.__locationInterceptorInstalled = true;
+
+          if (!navigator.geolocation) return;
+
+          var _origGet = navigator.geolocation.getCurrentPosition
+                           .bind(navigator.geolocation);
+
+          function _flutterEnsure(cb) {
+            if (window.flutter_inappwebview &&
+                window.flutter_inappwebview.callHandler) {
+              window.flutter_inappwebview.callHandler('ensureLocationEnabled')
+                .then(function(ok) { cb(!!ok); })
+                .catch(function()  { cb(true);  });
+            } else {
+              cb(true);
+            }
+          }
+
+          navigator.geolocation.getCurrentPosition = function(
+              success, error, options) {
+            _flutterEnsure(function(ok) {
+              if (ok) {
+                _origGet(success, error, options);
+              } else if (typeof error === 'function') {
+                error({ code: 2, message: 'Location services are disabled.' });
+              }
+            });
+          };
+
+          console.log('[Flutter] Location interceptor active');
+        })();
+      """;
+      await controller.evaluateJavascript(source: script);
+    } catch (e) {
+      debugPrint('❌ Failed to inject location interceptor: $e');
     }
   }
 
@@ -644,10 +739,77 @@ class _WebViewScreenState extends State<WebViewScreen> {
     try {
       const script = r"""
         (function() {
-          if (window.__shareBridgeInstalled) return;
-          window.__shareBridgeInstalled = true;
+          var __lastClickedElement = null;
+          document.addEventListener('click', function(e) {
+            __lastClickedElement = e.target;
+          }, true);
 
           var nativeShare = function(data) {
+            // Enhancement: If URL is missing, try to find it in the DOM (useful for Your Orders screen)
+            if (!data.url && data.title) {
+              console.log('🔍 URL missing in share data, searching DOM for restaurant link...');
+              try {
+                var restaurantName = data.title.toLowerCase();
+
+                // Strategy 0: Use the last clicked element to find the nearest link (Very precise)
+                if (__lastClickedElement) {
+                  var container = __lastClickedElement.closest('.order-card, .restaurant-card, [class*="card"], div');
+                  if (container) {
+                    var link = container.querySelector('a[href*="/user/restaurants/"], a[href*="/store/"], a[href*="/restaurant/"]');
+                    if (link) {
+                      data.url = link.href;
+                      console.log('✅ Found restaurant link via nearest container:', data.url);
+                    }
+                  }
+                }
+
+                if (!data.url) {
+                  // Find all links that might be restaurant links - Updated with Zapoo specific paths
+                  var links = document.querySelectorAll('a[href*="/store/"], a[href*="/restaurant/"], a[href*="/menu/"], a[href*="/user/restaurants/"]');
+                  
+                  // Strategy 1: Find "View menu" links near the restaurant name
+                for (var i = 0; i < links.length; i++) {
+                  var link = links[i];
+                  var linkText = link.innerText.toLowerCase();
+                  
+                  // If it's a "View menu" link, check its parent card for the restaurant name
+                  if (linkText.includes('view menu') || linkText.includes('view') || linkText.includes('menu')) {
+                    var container = link.closest('.order-card, .restaurant-card, [class*="card"], div');
+                    if (container && container.innerText.toLowerCase().includes(restaurantName)) {
+                      data.url = link.href;
+                      console.log('✅ Found restaurant link via View Menu:', data.url);
+                      break;
+                    }
+                  }
+                }
+                
+                // Strategy 2: If name is still missing, find any restaurant link containing name in parent
+                if (!data.url) {
+                  for (var i = 0; i < links.length; i++) {
+                    var link = links[i];
+                    var container = link.closest('div, li, section');
+                    if (container && container.innerText.toLowerCase().includes(restaurantName)) {
+                      data.url = link.href;
+                      console.log('✅ Found restaurant link in parent container:', data.url);
+                      break;
+                    }
+                  }
+                }
+                
+                // Strategy 3: Just find any link on the page that contains the name and looks like a store link
+                if (!data.url) {
+                  for (var i = 0; i < links.length; i++) {
+                    if (links[i].href.toLowerCase().includes(restaurantName.replace(/\s+/g, '-'))) {
+                      data.url = links[i].href;
+                      break;
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error('❌ Error finding restaurant link:', e);
+              }
+            }
+
             return new Promise(function(resolve, reject) {
               if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
                 window.flutter_inappwebview.callHandler('share', data).then(function(result) {
@@ -1315,7 +1477,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
                   children: [
                     InAppWebView(
                       initialUrlRequest: URLRequest(
-                        url: WebUri(AppConfig.webUrl),
+                        url: WebUri(widget.initialUrl ?? AppConfig.webUrl),
                       ),
                       pullToRefreshController: _pullToRefreshController,
                       initialSettings: InAppWebViewSettings(
@@ -1472,27 +1634,32 @@ class _WebViewScreenState extends State<WebViewScreen> {
                             _locationButtonClickDetected = true;
                             debugPrint('📍 Web location button click detected');
 
-                            // PROACTIVE: Jump to settings immediately upon click if things are disabled
-                            bool serviceEnabled =
-                                await Geolocator.isLocationServiceEnabled();
-                            if (!serviceEnabled) {
-                              await Geolocator
-                                  .openLocationSettings(); // Opens GPS toggle
-                              return;
-                            }
+                            final ready = await _checkAndEnableLocation();
+                            if (!ready || !mounted) return;
 
-                            var status = await Permission.location.status;
-                            if (status.isPermanentlyDenied) {
-                              await openAppSettings(); // Opens Permissions
-                              return;
-                            }
+                            // Notify the web page to retry its geolocation flow.
+                            await _webViewController?.evaluateJavascript(
+                              source: r"""
+                                (function() {
+                                  if (typeof window.onFlutterLocationReady === 'function') {
+                                    window.onFlutterLocationReady();
+                                  }
+                                  document.dispatchEvent(
+                                    new CustomEvent('flutterLocationEnabled', { bubbles: true })
+                                  );
+                                })();
+                              """,
+                            );
+                            debugPrint('📍 Location ready – web page notified');
+                          },
+                        );
 
-                            if (status.isDenied) {
-                              status = await Permission.location.request();
-                              if (!status.isGranted) {
-                                await openAppSettings(); // Forces settings if rejected
-                              }
-                            }
+                        // Called by the injected JS geolocation interceptor before
+                        // every navigator.geolocation.getCurrentPosition call.
+                        controller.addJavaScriptHandler(
+                          handlerName: 'ensureLocationEnabled',
+                          callback: (args) async {
+                            return await _checkAndEnableLocation();
                           },
                         );
 
@@ -1708,12 +1875,11 @@ class _WebViewScreenState extends State<WebViewScreen> {
                           },
                         );
 
-                        // Native Share Bridge
                         controller.addJavaScriptHandler(
                           handlerName: 'share',
                           callback: (args) async {
-                            final payload = args.isNotEmpty ? args.first : null;
-                            final success = await openNativeShare(payload);
+                            final currentUrl = await controller.getUrl();
+                            final success = await openNativeShare(args, currentUrl: currentUrl?.toString());
                             return {'success': success};
                           },
                         );
@@ -1722,8 +1888,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
                         controller.addJavaScriptHandler(
                           handlerName: 'nativeShare',
                           callback: (args) async {
-                            final payload = args.isNotEmpty ? args.first : null;
-                            final success = await openNativeShare(payload);
+                            final currentUrl = await controller.getUrl();
+                            final success = await openNativeShare(args, currentUrl: currentUrl?.toString());
                             return {'success': success};
                           },
                         );
@@ -1746,6 +1912,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
                         await _injectPhoneCaptureScript(controller);
                         await _injectLinkInterceptorScript(controller);
                         await _injectApiInterceptorScript(controller);
+                        await _injectLocationInterceptorScript(controller);
                         await _injectVoiceSearchBridge(controller);
                         await _injectShareBridge(controller);
                         await controller.evaluateJavascript(

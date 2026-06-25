@@ -6,8 +6,11 @@ import 'package:webview_master_app/utils/prefs_util.dart';
 import 'package:webview_master_app/utils/status_bar_util.dart';
 import 'package:webview_master_app/utils/permission_handler_util.dart';
 import 'package:webview_master_app/utils/notification_service.dart';
+import 'package:webview_master_app/utils/location_settings_util.dart';
+import 'package:geolocator/geolocator.dart';
 
 import 'package:webview_master_app/screens/webview_screen.dart';
+import 'package:webview_master_app/utils/deep_link_handler.dart';
 
 /// Splash Screen - Shows logo and app name for configured duration
 class SplashScreen extends StatefulWidget {
@@ -26,12 +29,22 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<double> _pulseAnimation;
+  String? _initialDeepLink;
 
   @override
   void initState() {
     super.initState();
     _setupAnimations();
+    _initDeepLinking();
     _navigateAfterDelay();
+  }
+
+  Future<void> _initDeepLinking() async {
+    final handler = DeepLinkHandler();
+    handler.onLinkReceived = (uri) {
+      _initialDeepLink = uri.toString();
+    };
+    await handler.initialize();
   }
 
   void _setupAnimations() {
@@ -95,7 +108,7 @@ class _SplashScreenState extends State<SplashScreen>
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            const WebViewScreen(),
+            WebViewScreen(initialUrl: _initialDeepLink),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
@@ -109,8 +122,26 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted) return;
     try {
       await PermissionHandlerUtil.requestAllPermissions();
+      await _showLocationDialogIfNeeded();
     } catch (e) {
       debugPrint('Initial permission request: $e');
+    }
+  }
+
+  /// On the very first launch, if device location is off, show the Google
+  /// Location Settings Resolution Dialog so the user can enable it inline.
+  Future<void> _showLocationDialogIfNeeded() async {
+    if (!mounted) return;
+    try {
+      if (PrefsUtil.isLocationDialogShown()) return;
+      await PrefsUtil.setLocationDialogShown();
+
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        await LocationSettingsUtil.showLocationEnableDialog();
+      }
+    } catch (e) {
+      debugPrint('Location dialog check: $e');
     }
   }
 
@@ -139,9 +170,11 @@ class _SplashScreenState extends State<SplashScreen>
       body: Stack(
         children: [
           // 1. Deep Navy Gradient Background
-          Container(
-            decoration: const BoxDecoration(color: Color(0xFFB3B3B3)),
-          ),
+         Container(
+  decoration: const BoxDecoration(
+    color: Color(0xFFFE593B),
+  ),
+),
 
           // 2. Animated Floating Soft Glows
           AnimatedBuilder(
@@ -212,46 +245,77 @@ class _SplashScreenState extends State<SplashScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         // Card/Container for Logo
-                        Container(
-                          width: 180,
-                          height: 180,
-                          padding: const EdgeInsets.all(28),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: const Color(0xFFfe583a),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 30,
-                                offset: const Offset(0, 10),
-                              ),
-                              BoxShadow(
-                                color: const Color(0xFFB3B3B3).withOpacity(0.3),
-                                blurRadius: 50,
-                                spreadRadius: -10,
-                                offset: const Offset(0, 0),
-                              ),
-                            ],
-                          ),
-                          // Display Logo
-                          child: Image.asset(
+                        // Container(
+                        //   width: 180,
+                        //   height: 180,
+                        //   padding: const EdgeInsets.all(28),
+                        //   decoration: BoxDecoration(
+                        //     shape: BoxShape.circle,
+                        //     color: const Color(0xFFfe583a),
+                        //     boxShadow: [
+                        //       BoxShadow(
+                        //         color: Colors.black.withOpacity(0.2),
+                        //         blurRadius: 30,
+                        //         offset: const Offset(0, 10),
+                        //       ),
+                        //       BoxShadow(
+                        //         color: const Color(0xFFB3B3B3).withOpacity(0.3),
+                        //         blurRadius: 50,
+                        //         spreadRadius: -10,
+                        //         offset: const Offset(0, 0),
+                        //       ),
+                        //     ],
+                        //   ),
+                        //   // Display Logo
+                        //   child: Image.asset(
+                        //     AppConfig.appLogoPath,
+                        //     fit: BoxFit.contain,
+                        //   ),
+                        // ),
+                        //  Container(
+                        //   width: 180,
+                        //   height: 180,
+                        //   padding: const EdgeInsets.all(28),
+                        //   decoration: BoxDecoration(
+                        //     shape: BoxShape.circle,
+                        //     color: const Color(0xFFfe583a),
+                        //     boxShadow: [
+                        //       BoxShadow(
+                        //         color: Colors.black.withOpacity(0.2),
+                        //         blurRadius: 30,
+                        //         offset: const Offset(0, 10),
+                        //       ),
+                        //       BoxShadow(
+                        //         color: const Color(0xFFB3B3B3).withOpacity(0.3),
+                        //         blurRadius: 50,
+                        //         spreadRadius: -10,
+                        //         offset: const Offset(0, 0),
+                        //       ),
+                        //     ],
+                        //   ),
+                        //   // Display Logo
+                        //   child: Image.asset(
+                        //     AppConfig.appLogoPath,
+                        //     fit: BoxFit.contain,
+                        //   ),
+                        // ),
+                        Image.asset(
                             AppConfig.appLogoPath,
                             fit: BoxFit.contain,
                           ),
-                        ),
                         const SizedBox(height: 30),
                         // Typography
-                        const Text(
-                          AppConfig.appName,
-                          style: TextStyle(
-                            fontFamily:
-                                'Inter', // Fallback to default if not available
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 4.0, // Increased spacing
-                            color: Colors.white,
-                          ),
-                        ),
+                        // const Text(
+                        //   AppConfig.appName,
+                        //   style: TextStyle(
+                        //     fontFamily:
+                        //         'Inter', // Fallback to default if not available
+                        //     fontSize: 22,
+                        //     fontWeight: FontWeight.bold,
+                        //     letterSpacing: 4.0, // Increased spacing
+                        //     color: Colors.white,
+                        //   ),
+                        // ),
                       ],
                     ),
                   ),

@@ -4,23 +4,38 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_master_app/config/app_config.dart';
 
-/// Background message handler for Firebase Cloud Messaging
-/// This must be a top-level function
-/// Handles notifications when app is in background or terminated state
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('📨 Background message received: ${message.messageId}');
-  debugPrint('📨 Message data: ${message.data}');
+  debugPrint('🔔 BG Notification: ${message.notification}');
+  debugPrint('📦 BG Data: ${message.data}');
 
-  // Initialize notification plugin for background messages
+  final RemoteNotification? notification = message.notification;
+  final Map<String, dynamic> data = message.data;
+
+  // IMPORTANT:
+  // If notification payload exists, Firebase Android already shows it.
+  // Do NOT show another local notification.
+  if (notification != null) {
+    debugPrint(
+        '✅ Firebase notification payload detected. Skipping local notification.');
+    return;
+  }
+
+  // Only handle DATA-ONLY messages
+  if (data.isEmpty) {
+    debugPrint('⚠️ No notification payload and no data payload.');
+    return;
+  }
+
   final FlutterLocalNotificationsPlugin notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  // Use AppConfig for consistency
   const AndroidInitializationSettings androidSettings =
       AndroidInitializationSettings(AppConfig.notificationIcon);
 
-  const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
+  const DarwinInitializationSettings iosSettings =
+      DarwinInitializationSettings(
     requestAlertPermission: true,
     requestBadgePermission: true,
     requestSoundPermission: true,
@@ -33,8 +48,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   await notificationsPlugin.initialize(initSettings);
 
-  // Create notification channel for Android using AppConfig
-  final AndroidNotificationChannel channel = AndroidNotificationChannel(
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
     AppConfig.notificationChannelId,
     AppConfig.notificationChannelName,
     description: AppConfig.notificationChannelDescription,
@@ -51,106 +65,57 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
           AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
-  RemoteNotification? notification = message.notification;
-  Map<String, dynamic>? data = message.data;
+  final String title =
+      data['title']?.toString() ??
+      data['notificationTitle']?.toString() ??
+      'Notification';
 
-  // Create unique ID for this notification
-  final String notificationId = message.messageId ??
-      '${message.sentTime?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch}';
+  final String body =
+      data['body']?.toString() ??
+      data['message']?.toString() ??
+      data['notificationBody']?.toString() ??
+      '';
 
-  debugPrint('📨 Background notification ID: $notificationId');
+  final AndroidNotificationDetails androidDetails =
+      AndroidNotificationDetails(
+    AppConfig.notificationChannelId,
+    AppConfig.notificationChannelName,
+    channelDescription: AppConfig.notificationChannelDescription,
+    importance: Importance.high,
+    priority: Priority.high,
+    playSound: true,
+    enableVibration: true,
+    icon: AppConfig.notificationIcon,
+    showWhen: true,
+    color: AppConfig.notificationColor,
+  );
 
-  // Handle notification payload (when app is in background/terminated)
-  if (notification != null) {
-    // Android notification details using AppConfig
-    final AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-      AppConfig.notificationChannelId, // Must match channel ID
-      AppConfig.notificationChannelName,
-      channelDescription: AppConfig.notificationChannelDescription,
-      importance: Importance.high,
-      priority: Priority.high,
-      playSound: true,
-      enableVibration: true,
-      icon: AppConfig.notificationIcon,
-      showWhen: true,
-      styleInformation: const BigTextStyleInformation(''),
-      color: AppConfig.notificationColor,
-    );
+  const DarwinNotificationDetails iosDetails =
+      DarwinNotificationDetails(
+    presentAlert: true,
+    presentBadge: true,
+    presentSound: true,
+  );
 
-    // iOS notification details
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
+  final NotificationDetails notificationDetails = NotificationDetails(
+    android: androidDetails,
+    iOS: iosDetails,
+  );
 
-    final NotificationDetails notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
+  final int localNotificationId =
+      (message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString())
+              .hashCode
+              .abs() %
+          2147483647;
 
-    // Show notification
-    // Use a hash of the notification ID to generate a consistent integer ID
-    // This prevents duplicate notifications even if the same message is processed multiple times
-    final int localNotificationId = notificationId.hashCode.abs() % 2147483647;
+  await notificationsPlugin.show(
+    localNotificationId,
+    title,
+    body,
+    notificationDetails,
+    payload: data.toString(),
+  );
 
-    await notificationsPlugin.show(
-      localNotificationId,
-      notification.title ?? 'Notification',
-      notification.body ?? '',
-      notificationDetails,
-      payload: data.toString(),
-    );
-
-    debugPrint(
-        '✅ Background notification shown: ${notification.title} (ID: $localNotificationId)');
-  } else if (data.isNotEmpty) {
-    // Handle data-only messages (messages without notification payload)
-    debugPrint('📨 Data-only message received in background');
-    final title = data['title']?.toString() ?? 'Notification';
-    final body = data['body']?.toString() ?? data['message']?.toString() ?? '';
-
-    // Android notification details using AppConfig
-    final AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-      AppConfig.notificationChannelId,
-      AppConfig.notificationChannelName,
-      channelDescription: AppConfig.notificationChannelDescription,
-      importance: Importance.high,
-      priority: Priority.high,
-      playSound: true,
-      enableVibration: true,
-      icon: AppConfig.notificationIcon,
-      showWhen: true,
-      styleInformation: const BigTextStyleInformation(''),
-      color: AppConfig.notificationColor,
-    );
-
-    // iOS notification details
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    final NotificationDetails notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    // Generate notification ID from data
-    final int localNotificationId = notificationId.hashCode.abs() % 2147483647;
-
-    await notificationsPlugin.show(
-      localNotificationId,
-      title,
-      body,
-      notificationDetails,
-      payload: data.toString(),
-    );
-
-    debugPrint(
-        '✅ Background data-only notification shown: $title (ID: $localNotificationId)');
-  }
+  debugPrint(
+      '✅ Data-only notification shown: $title (ID: $localNotificationId)');
 }

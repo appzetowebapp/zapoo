@@ -24,6 +24,8 @@ class NotificationService {
   // Track shown notifications to prevent duplicates
   final Set<String> _shownNotificationIds = <String>{};
   final Map<String, DateTime> _notificationTimestamps = <String, DateTime>{};
+  // Track recent notifications by content to deduplicate same-content messages
+  final Map<String, DateTime> _recentContentKeys = <String, DateTime>{};
 
   /// Initialize notification service
   Future<void> initialize() async {
@@ -143,6 +145,16 @@ class NotificationService {
       debugPrint('📨 Notification title: ${notification.title}');
       debugPrint('📨 Notification body: ${notification.body}');
 
+      // Content-based deduplication: skip if same title+body was shown within 5 seconds
+      final contentKey = '${notification.title}_${notification.body}';
+      final lastContentTime = _recentContentKeys[contentKey];
+      if (lastContentTime != null &&
+          DateTime.now().difference(lastContentTime).inSeconds < 5) {
+        debugPrint('⚠️ Duplicate notification (same content within 5s), skipping: $contentKey');
+        return;
+      }
+      _recentContentKeys[contentKey] = DateTime.now();
+
       // Create a unique ID - use messageId if available, otherwise create from content
       final String uniqueId = notificationId.isNotEmpty
           ? notificationId
@@ -189,6 +201,16 @@ class NotificationService {
       final title = data['title']?.toString() ?? 'Notification';
       final body =
           data['body']?.toString() ?? data['message']?.toString() ?? '';
+
+      // Content-based deduplication: skip if same title+body was shown within 5 seconds
+      final contentKey = '${title}_$body';
+      final lastContentTime = _recentContentKeys[contentKey];
+      if (lastContentTime != null &&
+          DateTime.now().difference(lastContentTime).inSeconds < 5) {
+        debugPrint('⚠️ Duplicate data-only notification (same content within 5s), skipping: $contentKey');
+        return;
+      }
+      _recentContentKeys[contentKey] = DateTime.now();
 
       // Create unique ID for data-only messages
       final String uniqueId = notificationId.isNotEmpty
@@ -237,6 +259,17 @@ class NotificationService {
     for (final id in keysToRemove) {
       _shownNotificationIds.remove(id);
       _notificationTimestamps.remove(id);
+    }
+
+    // Clean content-key cache (entries older than 30 seconds)
+    final contentKeysToRemove = <String>[];
+    _recentContentKeys.forEach((key, timestamp) {
+      if (now.difference(timestamp).inSeconds > 30) {
+        contentKeysToRemove.add(key);
+      }
+    });
+    for (final key in contentKeysToRemove) {
+      _recentContentKeys.remove(key);
     }
   }
 

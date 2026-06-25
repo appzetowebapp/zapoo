@@ -100,6 +100,20 @@ class PrefsUtil {
     await instance.remove(_keyAccessToken);
   }
 
+  // ==================== LOCATION DIALOG ====================
+
+  static const String _keyLocationDialogShown = 'location_dialog_shown';
+
+  /// Whether the first-launch location enable dialog has already been shown.
+  static bool isLocationDialogShown() {
+    return instance.getBool(_keyLocationDialogShown) ?? false;
+  }
+
+  /// Mark the location dialog as shown so it is not shown again.
+  static Future<void> setLocationDialogShown() async {
+    await instance.setBool(_keyLocationDialogShown, true);
+  }
+
   // ==================== CLEAR ALL ====================
 
   /// Clear all preferences (for testing/debugging)
